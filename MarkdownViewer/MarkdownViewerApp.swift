@@ -1,74 +1,214 @@
 import SwiftUI
 import Markdown
 import WebKit
+import ObjectiveC
 
 @main
 struct MarkdownViewerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @StateObject private var recentFilesStore = RecentFilesStore.shared
 
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environmentObject(appDelegate.documentState)
         }
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Open...") {
-                    openFile()
+                    appDelegate.openFileFromPanel()
                 }
                 .keyboardShortcut("o", modifiers: .command)
 
                 Menu("Open Recent") {
-                    ForEach(appDelegate.documentState.recentFiles, id: \.self) { url in
+                    ForEach(recentFilesStore.recentFiles, id: \.self) { url in
                         Button(url.lastPathComponent) {
-                            appDelegate.documentState.loadFile(at: url)
+                            appDelegate.openFile(at: url)
                         }
                     }
-                    if !appDelegate.documentState.recentFiles.isEmpty {
+                    if !recentFilesStore.recentFiles.isEmpty {
                         Divider()
                         Button("Clear Menu") {
-                            appDelegate.documentState.clearRecentFiles()
+                            recentFilesStore.clear()
                         }
                     }
                 }
             }
             CommandGroup(after: .newItem) {
+                Button("New Tab") {
+                    appDelegate.openEmptyTab()
+                }
+                .keyboardShortcut("t", modifiers: .command)
+
                 Button("Reload") {
-                    appDelegate.documentState.reload()
+                    appDelegate.reloadActiveDocument()
                 }
                 .keyboardShortcut("r", modifiers: .command)
             }
         }
     }
+}
 
-    private func openFile() {
+class AppDelegate: NSObject, NSApplicationDelegate {
+    private var windowControllers: [ViewerWindowController] = []
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            openFile(at: url)
+        }
+        NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSWindow.allowsAutomaticWindowTabbing = true
+        NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        return true
+    }
+
+    func openFileFromPanel() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.init(filenameExtension: "md")!, .init(filenameExtension: "markdown")!]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
 
         if panel.runModal() == .OK, let url = panel.url {
-            appDelegate.documentState.loadFile(at: url)
+            openFile(at: url)
+        }
+    }
+
+    func openFile(at url: URL) {
+        if let documentState = reusableEmptyDocumentState() {
+            documentState.loadFile(at: url)
+            focusWindow(for: documentState)
+            return
+        }
+
+        openInNewTab(url: url)
+    }
+
+    func openEmptyTab() {
+        openInNewTab(url: nil)
+    }
+
+    func reloadActiveDocument() {
+        activeDocumentState()?.reload()
+    }
+
+    private func activeDocumentState() -> DocumentState? {
+        if let state = NSApplication.shared.keyWindow?.documentState {
+            return state
+        }
+        if let state = NSApplication.shared.mainWindow?.documentState {
+            return state
+        }
+        return NSApplication.shared.windows.compactMap(\.documentState).first
+    }
+
+    private func reusableEmptyDocumentState() -> DocumentState? {
+        if let active = activeDocumentState(), active.currentURL == nil {
+            return active
+        }
+        return NSApplication.shared.windows
+            .compactMap(\.documentState)
+            .first { $0.currentURL == nil }
+    }
+
+    private func focusWindow(for documentState: DocumentState) {
+        if let window = NSApplication.shared.windows.first(where: { $0.documentState === documentState }) {
+            window.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    private func openInNewTab(url: URL?) {
+        let documentState = DocumentState()
+        if let url {
+            documentState.loadFile(at: url)
+        }
+
+        openWindow(with: documentState)
+    }
+
+    private func openWindow(with documentState: DocumentState) {
+        let contentView = ContentView(documentState: documentState)
+        let hostingController = NSHostingController(rootView: contentView)
+        let window = NSWindow(contentViewController: hostingController)
+        window.setContentSize(NSSize(width: 600, height: 400))
+        window.tabbingMode = .preferred
+        window.title = documentState.title
+        window.documentState = documentState
+
+        let windowController = ViewerWindowController(window: window)
+        window.delegate = windowController
+        windowController.onClose = { [weak self, weak windowController] in
+            guard let windowController else { return }
+            self?.windowControllers.removeAll { $0 === windowController }
+        }
+        if let tabGroupWindow = NSApplication.shared.keyWindow ?? NSApplication.shared.mainWindow {
+            tabGroupWindow.addTabbedWindow(window, ordered: .above)
+        }
+        windowController.showWindow(nil)
+        windowControllers.append(windowController)
+    }
+}
+
+final class ViewerWindowController: NSWindowController, NSWindowDelegate {
+    var onClose: (() -> Void)?
+
+    func windowWillClose(_ notification: Notification) {
+        onClose?()
+    }
+}
+
+private var documentStateKey: UInt8 = 0
+
+private extension NSWindow {
+    var documentState: DocumentState? {
+        get {
+            objc_getAssociatedObject(self, &documentStateKey) as? DocumentState
+        }
+        set {
+            objc_setAssociatedObject(self, &documentStateKey, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
         }
     }
 }
 
-class AppDelegate: NSObject, NSApplicationDelegate {
-    let documentState = DocumentState()
+final class RecentFilesStore: ObservableObject {
+    static let shared = RecentFilesStore()
 
-    func application(_ application: NSApplication, open urls: [URL]) {
-        if let url = urls.first {
-            documentState.loadFile(at: url)
+    @Published private(set) var recentFiles: [URL] = []
+    private let maxRecentFiles = 10
+    private let defaultsKey = "recentFiles"
+
+    private init() {
+        load()
+    }
+
+    func add(_ url: URL) {
+        recentFiles.removeAll { $0 == url }
+        recentFiles.insert(url, at: 0)
+        if recentFiles.count > maxRecentFiles {
+            recentFiles = Array(recentFiles.prefix(maxRecentFiles))
         }
-        NSApplication.shared.activate(ignoringOtherApps: true)
+        save()
     }
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApplication.shared.activate(ignoringOtherApps: true)
+    func clear() {
+        recentFiles = []
+        save()
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        return true
+    private func save() {
+        let paths = recentFiles.map { $0.path }
+        UserDefaults.standard.set(paths, forKey: defaultsKey)
+    }
+
+    private func load() {
+        if let paths = UserDefaults.standard.stringArray(forKey: defaultsKey) {
+            recentFiles = paths.compactMap { URL(fileURLWithPath: $0) }
+                .filter { FileManager.default.fileExists(atPath: $0.path) }
+        }
     }
 }
 
@@ -76,21 +216,24 @@ class DocumentState: ObservableObject {
     @Published var htmlContent: String = ""
     @Published var title: String = "Markdown Viewer"
     @Published var fileChanged: Bool = false
-    @Published var recentFiles: [URL] = []
     var currentURL: URL?
     private var fileMonitor: DispatchSourceFileSystemObject?
     private var lastModificationDate: Date?
-    private let maxRecentFiles = 10
+    private let recentFilesStore: RecentFilesStore
 
-    init() {
-        loadRecentFiles()
+    init(recentFilesStore: RecentFilesStore = .shared) {
+        self.recentFilesStore = recentFilesStore
+    }
+
+    deinit {
+        stopMonitoring()
     }
 
     func loadFile(at url: URL) {
         currentURL = url
         fileChanged = false
         startMonitoring(url: url)
-        addToRecentFiles(url)
+        recentFilesStore.add(url)
         do {
             let markdown = try String(contentsOf: url, encoding: .utf8)
             let (frontMatter, content) = parseFrontMatter(markdown)
@@ -157,32 +300,6 @@ class DocumentState: ObservableObject {
     func reload() {
         guard let url = currentURL else { return }
         loadFile(at: url)
-    }
-
-    func clearRecentFiles() {
-        recentFiles = []
-        saveRecentFiles()
-    }
-
-    private func addToRecentFiles(_ url: URL) {
-        recentFiles.removeAll { $0 == url }
-        recentFiles.insert(url, at: 0)
-        if recentFiles.count > maxRecentFiles {
-            recentFiles = Array(recentFiles.prefix(maxRecentFiles))
-        }
-        saveRecentFiles()
-    }
-
-    private func saveRecentFiles() {
-        let paths = recentFiles.map { $0.path }
-        UserDefaults.standard.set(paths, forKey: "recentFiles")
-    }
-
-    private func loadRecentFiles() {
-        if let paths = UserDefaults.standard.stringArray(forKey: "recentFiles") {
-            recentFiles = paths.compactMap { URL(fileURLWithPath: $0) }
-                .filter { FileManager.default.fileExists(atPath: $0.path) }
-        }
     }
 
     private func startMonitoring(url: URL) {
@@ -521,8 +638,39 @@ struct HTMLConverter: MarkupWalker {
     }
 }
 
+struct WindowAccessor: NSViewRepresentable {
+    let onResolve: (NSWindow) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = WindowResolverView()
+        view.onResolve = onResolve
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        if let window = nsView.window {
+            onResolve(window)
+        }
+    }
+}
+
+final class WindowResolverView: NSView {
+    var onResolve: ((NSWindow) -> Void)?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let window {
+            onResolve?(window)
+        }
+    }
+}
+
 struct ContentView: View {
-    @EnvironmentObject var documentState: DocumentState
+    @StateObject private var documentState: DocumentState
+
+    init(documentState: DocumentState = DocumentState()) {
+        _documentState = StateObject(wrappedValue: documentState)
+    }
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -567,6 +715,10 @@ struct ContentView: View {
         }
         .frame(minWidth: 600, minHeight: 400)
         .navigationTitle(documentState.title)
+        .background(WindowAccessor { window in
+            window.tabbingMode = .preferred
+            window.documentState = documentState
+        })
     }
 }
 
