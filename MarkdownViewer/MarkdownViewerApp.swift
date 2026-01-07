@@ -50,6 +50,10 @@ struct MarkdownViewerApp: App {
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowControllers: [ViewerWindowController] = []
+    private let openFilesStore = OpenFilesStore.shared
+    private var windowCloseObserver: Any?
+    private var didRestoreOpenFiles = false
+    private var isTerminating = false
 
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
@@ -61,10 +65,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = true
         NSApplication.shared.activate(ignoringOtherApps: true)
+        windowCloseObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let window = note.object as? NSWindow else { return }
+            self?.handleWindowWillClose(window)
+        }
+        DispatchQueue.main.async { [weak self] in
+            self?.restoreOpenFilesIfNeeded()
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return true
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        isTerminating = true
+        persistOpenFilesFromWindows()
+        return .terminateNow
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        if !isTerminating {
+            persistOpenFilesFromWindows()
+        }
+        if let windowCloseObserver {
+            NotificationCenter.default.removeObserver(windowCloseObserver)
+        }
     }
 
     func openFileFromPanel() {
@@ -119,6 +149,45 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let window = NSApplication.shared.windows.first(where: { $0.documentState === documentState }) {
             window.makeKeyAndOrderFront(nil)
         }
+    }
+
+    private func restoreOpenFilesIfNeeded() {
+        guard !didRestoreOpenFiles else { return }
+        let urls = openFilesStore.openFiles
+        guard !urls.isEmpty else { return }
+        guard NSApplication.shared.windows.contains(where: { $0.documentState != nil }) else {
+            DispatchQueue.main.async { [weak self] in
+                self?.restoreOpenFilesIfNeeded()
+            }
+            return
+        }
+        didRestoreOpenFiles = true
+        let existing = Set(currentOpenFileURLs().map { $0.path })
+        for url in urls where !existing.contains(url.path) {
+            openFile(at: url)
+        }
+    }
+
+    private func handleWindowWillClose(_ window: NSWindow) {
+        guard window.documentState != nil else { return }
+        if isTerminating { return }
+        let documentWindows = NSApplication.shared.windows.filter { $0.documentState != nil }
+        if documentWindows.count == 1 && documentWindows.first === window {
+            openFilesStore.set(currentOpenFileURLs())
+            return
+        }
+        let remaining = documentWindows
+            .filter { $0 !== window }
+            .compactMap { $0.documentState?.currentURL }
+        openFilesStore.set(remaining)
+    }
+
+    private func persistOpenFilesFromWindows() {
+        openFilesStore.set(currentOpenFileURLs())
+    }
+
+    private func currentOpenFileURLs() -> [URL] {
+        NSApplication.shared.windows.compactMap { $0.documentState?.currentURL }
     }
 
     private func openInNewTab(url: URL?) {
@@ -209,6 +278,46 @@ final class RecentFilesStore: ObservableObject {
             recentFiles = paths.compactMap { URL(fileURLWithPath: $0) }
                 .filter { FileManager.default.fileExists(atPath: $0.path) }
         }
+    }
+}
+
+final class OpenFilesStore: ObservableObject {
+    static let shared = OpenFilesStore()
+
+    @Published private(set) var openFiles: [URL] = []
+    private let defaultsKey = "openFiles"
+
+    private init() {
+        load()
+    }
+
+    func set(_ urls: [URL]) {
+        openFiles = normalize(urls)
+        save()
+    }
+
+    private func save() {
+        let paths = openFiles.map { $0.path }
+        UserDefaults.standard.set(paths, forKey: defaultsKey)
+    }
+
+    private func load() {
+        if let paths = UserDefaults.standard.stringArray(forKey: defaultsKey) {
+            openFiles = normalize(paths.map { URL(fileURLWithPath: $0) })
+        }
+    }
+
+    private func normalize(_ urls: [URL]) -> [URL] {
+        var seen: Set<String> = []
+        var result: [URL] = []
+        for url in urls {
+            let path = url.path
+            guard !seen.contains(path) else { continue }
+            guard FileManager.default.fileExists(atPath: path) else { continue }
+            seen.insert(path)
+            result.append(url)
+        }
+        return result
     }
 }
 
