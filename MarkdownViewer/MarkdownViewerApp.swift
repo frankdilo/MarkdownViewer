@@ -39,6 +39,27 @@ struct MarkdownViewerApp: App {
                 }
                 .keyboardShortcut("t", modifiers: .command)
 
+                Button("Next Tab") {
+                    appDelegate.selectNextTab()
+                }
+                .keyboardShortcut("]", modifiers: [.command, .shift])
+                .keyboardShortcut(.tab, modifiers: .control)
+
+                Button("Previous Tab") {
+                    appDelegate.selectPreviousTab()
+                }
+                .keyboardShortcut("[", modifiers: [.command, .shift])
+                .keyboardShortcut(.tab, modifiers: [.control, .shift])
+
+                Divider()
+
+                ForEach(1...9, id: \.self) { index in
+                    Button("Show Tab \(index)") {
+                        appDelegate.selectTab(at: index - 1)
+                    }
+                    .keyboardShortcut(KeyEquivalent(Character("\(index)")), modifiers: .command)
+                }
+
                 Button("Reload") {
                     appDelegate.reloadActiveDocument()
                 }
@@ -52,6 +73,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowControllers: [ViewerWindowController] = []
     private let openFilesStore = OpenFilesStore.shared
     private var windowCloseObserver: Any?
+    private var keyDownMonitor: Any?
     private var didRestoreOpenFiles = false
     private var isTerminating = false
 
@@ -72,6 +94,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] note in
             guard let window = note.object as? NSWindow else { return }
             self?.handleWindowWillClose(window)
+        }
+        keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard flags.contains(.control) else { return event }
+            guard !flags.contains(.command), !flags.contains(.option) else { return event }
+            guard event.keyCode == 48 else { return event }
+            guard self.activeDocumentWindow() != nil else { return event }
+            if flags.contains(.shift) {
+                self.selectPreviousTab()
+            } else {
+                self.selectNextTab()
+            }
+            return nil
         }
         DispatchQueue.main.async { [weak self] in
             self?.restoreOpenFilesIfNeeded()
@@ -94,6 +130,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if let windowCloseObserver {
             NotificationCenter.default.removeObserver(windowCloseObserver)
+        }
+        if let keyDownMonitor {
+            NSEvent.removeMonitor(keyDownMonitor)
         }
     }
 
@@ -126,6 +165,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         activeDocumentState()?.reload()
     }
 
+    func selectNextTab() {
+        activeDocumentWindow()?.selectNextTab(nil)
+    }
+
+    func selectPreviousTab() {
+        activeDocumentWindow()?.selectPreviousTab(nil)
+    }
+
+    func selectTab(at index: Int) {
+        guard let window = activeDocumentWindow() else { return }
+        let tabs = tabGroupWindows(for: window)
+        guard tabs.indices.contains(index) else { return }
+        tabs[index].makeKeyAndOrderFront(nil)
+    }
+
     private func activeDocumentState() -> DocumentState? {
         if let state = NSApplication.shared.keyWindow?.documentState {
             return state
@@ -134,6 +188,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return state
         }
         return NSApplication.shared.windows.compactMap(\.documentState).first
+    }
+
+    private func activeDocumentWindow() -> NSWindow? {
+        if let window = NSApplication.shared.keyWindow, window.documentState != nil {
+            return window
+        }
+        if let window = NSApplication.shared.mainWindow, window.documentState != nil {
+            return window
+        }
+        return NSApplication.shared.windows.first { $0.documentState != nil }
     }
 
     private func reusableEmptyDocumentState() -> DocumentState? {
@@ -149,6 +213,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let window = NSApplication.shared.windows.first(where: { $0.documentState === documentState }) {
             window.makeKeyAndOrderFront(nil)
         }
+    }
+
+    private func tabGroupWindows(for window: NSWindow) -> [NSWindow] {
+        let tabs = window.tabbedWindows ?? []
+        return tabs.isEmpty ? [window] : tabs
     }
 
     private func restoreOpenFilesIfNeeded() {
@@ -353,7 +422,7 @@ class DocumentState: ObservableObject {
             let frontMatterHTML = renderFrontMatter(frontMatter)
             self.htmlContent = wrapInHTML(frontMatterHTML + rendered.html, title: url.lastPathComponent)
             self.title = url.lastPathComponent
-            self.outlineItems = rendered.outline
+            self.outlineItems = normalizedOutline(rendered.outline)
         } catch {
             self.htmlContent = wrapInHTML("<p>Error loading file: \(error.localizedDescription)</p>", title: "Error")
             self.title = "Error"
@@ -399,6 +468,18 @@ class DocumentState: ObservableObject {
         }
         html += "</table></div>\n"
         return html
+    }
+
+    private func normalizedOutline(_ items: [OutlineItem]) -> [OutlineItem] {
+        let h1Count = items.filter { $0.level == 1 }.count
+        guard h1Count == 1 else { return items }
+
+        return items.compactMap { item in
+            if item.level == 1 {
+                return nil
+            }
+            return OutlineItem(title: item.title, level: max(1, item.level - 1), anchorID: item.anchorID)
+        }
     }
 
     private func escapeHTML(_ string: String) -> String {
@@ -931,10 +1012,6 @@ struct OutlineSidebar: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
-                Text("OUTLINE")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.secondary)
-                Divider()
                 if items.isEmpty {
                     Text("No headings")
                         .foregroundColor(.secondary)
@@ -950,7 +1027,12 @@ struct OutlineSidebar: View {
         .frame(width: 240, alignment: .topLeading)
         .frame(maxHeight: .infinity, alignment: .topLeading)
         .background(Color(NSColor.windowBackgroundColor).opacity(0.95))
-        .overlay(Divider(), alignment: .leading)
+        .overlay(
+            Rectangle()
+                .fill(Color(NSColor.separatorColor))
+                .frame(width: 1),
+            alignment: .leading
+        )
     }
 }
 
@@ -979,10 +1061,6 @@ struct OutlineRow: View {
             onSelect(item)
         }) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Circle()
-                    .fill(item.level <= 2 ? Color.accentColor : Color.secondary.opacity(0.6))
-                    .frame(width: 4, height: 4)
-                    .padding(.top, 4)
                 Text(item.title)
                     .font(.system(size: fontSize, weight: fontWeight))
                     .foregroundColor(textColor)
