@@ -498,3 +498,310 @@ CodexBar/
 ├── version.env                 # Version numbers
 └── CHANGELOG.md                # Release notes source
 ```
+
+---
+
+## Appendix B: Detailed CI/CD & Release Automation
+
+This section provides an in-depth look at the automation infrastructure.
+
+### GitHub Actions Workflows
+
+#### ci.yml - Main CI Pipeline
+
+**Triggers**: Every push to any branch + all pull requests
+
+**Jobs**:
+
+1. **`lint-build-test`** (macOS)
+   ```yaml
+   - Select Xcode 26.1.1 (fallback to 26.1 or default)
+   - Install Swift 6.2 toolchain
+   - Run SwiftFormat: swiftformat --lint Sources Tests
+   - Run SwiftLint: swiftlint --strict
+   - Run tests: swift test --parallel
+   ```
+
+2. **`build-linux-cli`** (Matrix: ubuntu x64 + arm64)
+   ```yaml
+   - Install Swift 6.2.1 via swift-actions/setup-swift@v3
+   - Build: swift build -c release --product CodexBarCLI --static-swift-stdlib
+   - Smoke tests: --help, --version, verify --web fails on Linux
+   ```
+
+#### release-cli.yml - Linux CLI Releases
+
+**Triggers**:
+- `release: types: [published]` (automatic on GitHub release)
+- `workflow_dispatch` (manual)
+
+**Permissions**: `contents: write`
+
+**Matrix**: linux-x64 (ubuntu-24.04), linux-arm64 (ubuntu-24.04-arm)
+
+**Steps**:
+```yaml
+1. Checkout code
+2. Setup Swift 6.2.1
+3. Build CodexBarCLI (release, static stdlib)
+4. Package: CodexBarCLI-{TAG}-linux-{ARCH}.tar.gz
+5. Generate SHA256 checksum
+6. Upload to GitHub release: gh release upload "$TAG" $ASSET $ASSET.sha256 --clobber
+```
+
+#### upstream-monitor.yml - Dependency Tracking
+
+**Triggers**:
+- Scheduled: Monday & Thursday at 9 AM UTC
+- Manual: `workflow_dispatch`
+
+**Purpose**: Track changes in upstream dependencies, create issues for review
+
+### Release Script Deep Dive
+
+**File**: `Scripts/release.sh`
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    RELEASE.SH EXECUTION FLOW                     │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  1. VALIDATION PHASE                                            │
+│     ├─ Source version.env and library files                     │
+│     ├─ Verify clean git worktree (no uncommitted changes)       │
+│     ├─ Validate CHANGELOG.md is finalized (validate_changelog)  │
+│     └─ Verify appcast.xml monotonic versioning                  │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  2. CODE QUALITY CHECKS                                         │
+│     ├─ SwiftFormat (lint mode - fails if changes needed)        │
+│     ├─ SwiftLint (strict mode - all warnings are errors)        │
+│     └─ swift test (full test suite must pass)                   │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  3. BUILD & SIGN PHASE                                          │
+│     ├─ Call Scripts/sign-and-notarize.sh                        │
+│     ├─ Extract Sparkle private key path                         │
+│     └─ Setup cleanup traps for temporary key files              │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  4. RELEASE OPERATIONS                                          │
+│     ├─ Create git tag: git tag "v${VERSION}"                    │
+│     ├─ Push tag to origin                                       │
+│     ├─ Extract release notes from CHANGELOG.md                  │
+│     └─ Create GitHub release: gh release create "$TAG" ...      │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  5. APPCAST MANAGEMENT                                          │
+│     ├─ Call Scripts/make_appcast.sh                             │
+│     ├─ Regenerate appcast.xml with EdDSA signatures             │
+│     ├─ Verify entry with Scripts/verify_appcast.sh              │
+│     └─ Commit updated appcast.xml to main                       │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  6. POST-RELEASE (Optional)                                     │
+│     ├─ If RUN_SPARKLE_UPDATE_TEST=1:                            │
+│     │   └─ Call Scripts/test_live_update.sh                     │
+│     └─ Verify all release assets with check-release-assets.sh   │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  7. FINALIZATION                                                │
+│     └─ Push appcast commit and all tags to origin               │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Supporting Scripts Detail
+
+#### sign-and-notarize.sh
+
+**Purpose**: Build, sign, notarize, and package the app
+
+```bash
+# Key functions:
+1. Environment Setup
+   ├─ App identity (Developer ID Application)
+   ├─ Bundle ID and configuration
+   └─ App Store Connect API credentials validation
+
+2. Build Phase
+   ├─ Support architectures: arm64, x86_64, or universal
+   └─ Optional clean builds
+
+3. Code Signing (innermost to outermost)
+   ├─ Sign helper executables
+   ├─ Sign widget extensions (.appex)
+   ├─ Sign Sparkle framework and nested XPCs
+   └─ Sign main app bundle with:
+      codesign --force --timestamp --options runtime --sign "$APP_IDENTITY"
+
+4. Notarization
+   ├─ Zip app bundle with ditto
+   ├─ Submit: xcrun notarytool submit --wait
+   └─ Staple: xcrun stapler staple
+
+5. Distribution
+   ├─ Remove extended attributes (xattr -rc)
+   ├─ Validate notarization status
+   ├─ Create universal dSYM via lipo
+   └─ Package final ZIP
+```
+
+#### make_appcast.sh
+
+**Purpose**: Generate signed Sparkle update feed entry
+
+```bash
+1. Validate ZIP file and SPARKLE_PRIVATE_KEY_FILE exists
+2. Extract version from filename or SPARKLE_RELEASE_VERSION env
+3. Generate HTML release notes via changelog-to-html.sh
+4. Run generate_appcast:
+   generate_appcast \
+     --ed-key-file "$PRIVATE_KEY_FILE" \
+     --download-url-prefix "https://github.com/.../releases/download/v${VERSION}/" \
+     --embed-release-notes \
+     --link "$FEED_URL" \
+     "$WORK_DIR"
+5. Output: Updated appcast.xml
+```
+
+#### verify_appcast.sh
+
+**Purpose**: Validate Sparkle update entries before committing
+
+```bash
+1. Validate Sparkle private key file exists
+2. Parse appcast.xml (extract URL, signature, length)
+3. Download release ZIP
+4. Verify file size matches declaration
+5. Verify EdDSA signature with sign_update tool
+6. Cleanup via EXIT trap
+```
+
+#### validate_changelog.sh
+
+**Purpose**: Pre-release changelog verification
+
+```bash
+1. Verify VERSION argument matches top section of CHANGELOG.md
+2. Confirm section exists: grep "^## ${VERSION}"
+3. Detect unreleased entries at top (reject if found)
+4. Exit with error on any validation failure
+```
+
+#### changelog-to-html.sh
+
+**Purpose**: Convert CHANGELOG.md to HTML for appcast
+
+```
+Markdown Input          →  HTML Output
+─────────────────────────────────────────
+## Version X.X.X        →  <h2>...</h2>
+### Subsection          →  <h3>...</h3>
+- List item             →  <ul><li>...</li></ul>
+**bold**                →  <strong>...</strong>
+`code`                  →  <code>...</code>
+[Link](url)             →  <a href="">...</a>
+```
+
+### Quality Gates Summary
+
+| Gate | Tool | Strictness | When |
+|------|------|-----------|------|
+| Code formatting | SwiftFormat | Lint (fails on diff) | CI + Release |
+| Linting | SwiftLint | Strict (warnings = errors) | CI + Release |
+| Testing | swift test | All must pass | CI + Release |
+| Changelog | validate_changelog.sh | Must be finalized | Release |
+| Appcast | verify_appcast.sh | Signature must validate | Release |
+| Assets | check-release-assets.sh | All artifacts exist | Release |
+
+### Secrets & Environment Variables
+
+**GitHub Actions Secrets**:
+| Secret | Used In | Purpose |
+|--------|---------|---------|
+| `GITHUB_TOKEN` | release-cli.yml | Upload release assets via gh CLI |
+
+**Local Environment Variables**:
+| Variable | Purpose |
+|----------|---------|
+| `SPARKLE_PRIVATE_KEY_FILE` | Path to Ed25519 private key |
+| `APP_STORE_CONNECT_API_KEY_P8` | Notarization API key |
+| `APP_STORE_CONNECT_KEY_ID` | Notarization key ID |
+| `APP_STORE_CONNECT_ISSUER_ID` | Notarization issuer ID |
+| `RUN_SPARKLE_UPDATE_TEST` | Trigger live update testing |
+| `MARKETING_VERSION` | From version.env |
+| `BUILD_NUMBER` | From version.env |
+
+### Workflow Orchestration Diagram
+
+```
+Developer Push to Branch
+         │
+         ▼
+┌────────────────────────┐
+│   CI Workflow (ci.yml) │
+│  ├─ macOS: lint, test  │
+│  └─ Linux: build CLI   │
+└────────────────────────┘
+         │
+         ▼
+   [All checks pass]
+         │
+         ▼
+    Merge to main
+         │
+         ▼
+┌────────────────────────────────────────┐
+│  Developer runs Scripts/release.sh     │
+│  (Manual - controlled release)         │
+│  ├─ Validates changelog                │
+│  ├─ Runs quality checks                │
+│  ├─ Builds & signs (sign-and-notarize) │
+│  ├─ Creates git tag                    │
+│  ├─ Publishes GitHub release (gh CLI)  │
+│  ├─ Generates appcast (make_appcast)   │
+│  ├─ Verifies appcast (verify_appcast)  │
+│  └─ Commits appcast to main            │
+└────────────────────────────────────────┘
+         │
+         ▼
+┌────────────────────────────────────────┐
+│  GitHub detects release published      │
+│                 │                      │
+│                 ▼                      │
+│  Release CLI Workflow (release-cli)    │
+│  ├─ Matrix: Build x64 & ARM64          │
+│  ├─ Package tarballs + checksums       │
+│  └─ Upload to GitHub release           │
+└────────────────────────────────────────┘
+         │
+         ▼
+┌────────────────────────────────────────┐
+│  Sparkle Clients                       │
+│  ├─ Check appcast.xml periodically     │
+│  ├─ Download CodexBar-{VERSION}.zip    │
+│  └─ Verify signature before install    │
+└────────────────────────────────────────┘
+```
+
+### Key Architectural Patterns
+
+1. **Modular Scripts**: Single responsibility, composable, independently callable
+2. **Defensive Programming**: `set -euo pipefail`, trap handlers, explicit validation
+3. **CI/CD Separation**: CI automatic, releases manual (developer control)
+4. **Multi-Architecture**: Universal macOS binaries, separate Linux builds
+5. **Security-First**: Notarization, Ed25519 signatures, private keys never committed
