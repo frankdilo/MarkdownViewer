@@ -154,6 +154,11 @@ struct MarkdownRenderer: MarkupWalker {
             result += "<del>"
             for child in strikethrough.children { visit(child) }
             result += "</del>"
+        case let inlineHTML as InlineHTML:
+            result += escapeHTML(inlineHTML.rawHTML)
+        case let htmlBlock as HTMLBlock:
+            result += escapeHTML(htmlBlock.rawHTML)
+            result += "\n"
         default:
             for child in markup.children {
                 visit(child)
@@ -162,10 +167,58 @@ struct MarkdownRenderer: MarkupWalker {
     }
 
     private func escapeHTML(_ string: String) -> String {
-        string
-            .replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
-            .replacingOccurrences(of: "\"", with: "&quot;")
+        var result = ""
+        var index = string.startIndex
+
+        while index < string.endIndex {
+            let character = string[index]
+            switch character {
+            case "&":
+                if let semiIndex = string[index...].firstIndex(of: ";") {
+                    let entity = string[index...semiIndex]
+                    if isHTMLEntity(entity) {
+                        result.append(contentsOf: entity)
+                        index = string.index(after: semiIndex)
+                        continue
+                    }
+                }
+                result.append("&amp;")
+            case "<":
+                result.append("&lt;")
+            case ">":
+                result.append("&gt;")
+            case "\"":
+                result.append("&quot;")
+            default:
+                result.append(character)
+            }
+            index = string.index(after: index)
+        }
+
+        return result
+    }
+
+    private func isHTMLEntity(_ entity: Substring) -> Bool {
+        guard entity.first == "&", entity.last == ";" else { return false }
+        let name = entity.dropFirst().dropLast()
+        guard !name.isEmpty else { return false }
+
+        if name.first == "#" {
+            let number = name.dropFirst()
+            guard !number.isEmpty else { return false }
+            if number.first == "x" || number.first == "X" {
+                return number.dropFirst().unicodeScalars.allSatisfy { scalar in
+                    let value = scalar.value
+                    return (value >= 48 && value <= 57)
+                        || (value >= 65 && value <= 70)
+                        || (value >= 97 && value <= 102)
+                }
+            }
+            return number.unicodeScalars.allSatisfy { CharacterSet.decimalDigits.contains($0) }
+        }
+
+        return name.unicodeScalars.allSatisfy {
+            CharacterSet.letters.contains($0) || CharacterSet.decimalDigits.contains($0)
+        }
     }
 }

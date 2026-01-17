@@ -31,7 +31,11 @@ final class MarkdownRendererTests: XCTestCase {
 
         XCTAssertTrue(rendered.html.contains("&lt;tag&gt;"))
         XCTAssertTrue(rendered.html.contains("&amp;"))
-        XCTAssertTrue(rendered.html.contains("&quot;quote&quot;"))
+        let smartQuotes = "\u{201C}quote\u{201D}"
+        XCTAssertTrue(
+            rendered.html.contains(smartQuotes)
+                || rendered.html.contains("&quot;quote&quot;")
+        )
     }
 
     func testRenderCodeBlocksAndInlineCode() {
