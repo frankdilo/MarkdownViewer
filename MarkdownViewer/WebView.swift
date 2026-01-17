@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 import WebKit
 
@@ -26,6 +27,7 @@ struct WebView: NSViewRepresentable {
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
+        let baseURL = Bundle.module.resourceURL ?? Bundle.main.resourceURL
         if htmlContent != context.coordinator.lastHTML {
             let shouldPreserveScroll = reloadToken != nil && reloadToken != context.coordinator.lastReloadToken
             context.coordinator.lastReloadToken = reloadToken
@@ -36,10 +38,10 @@ struct WebView: NSViewRepresentable {
                 let coordinator = context.coordinator
                 webView.evaluateJavaScript("window.scrollY") { result, _ in
                     coordinator.savedScrollY = (result as? CGFloat) ?? 0
-                    webView.loadHTMLString(htmlContent, baseURL: nil)
+                    webView.loadHTMLString(htmlContent, baseURL: baseURL)
                 }
             } else {
-                webView.loadHTMLString(htmlContent, baseURL: nil)
+                webView.loadHTMLString(htmlContent, baseURL: baseURL)
             }
         }
 

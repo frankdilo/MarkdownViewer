@@ -16,7 +16,10 @@ let package = Package(
                 .product(name: "Markdown", package: "swift-markdown")
             ],
             path: "MarkdownViewer",
-            exclude: ["Info.plist"]
+            exclude: ["Info.plist"],
+            resources: [
+                .process("Resources")
+            ]
         )
     ]
 )

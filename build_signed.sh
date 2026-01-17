@@ -65,6 +65,14 @@ build_product_path() {
     esac
 }
 
+resource_bundle_path() {
+    local arch="$1"
+    case "$arch" in
+        arm64|x86_64) echo ".build/${arch}-apple-macosx/${CONF}/MarkdownViewer_MarkdownViewer.bundle" ;;
+        *) echo ".build/${CONF}/MarkdownViewer_MarkdownViewer.bundle" ;;
+    esac
+}
+
 verify_binary_arches() {
     local binary="$1"; shift
     local expected=("$@")
@@ -115,6 +123,10 @@ verify_binary_arches "$DEST_BIN" "${ARCH_LIST[@]}"
 
 cp "MarkdownViewer/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
 cp "AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+RESOURCE_BUNDLE="$(resource_bundle_path "${ARCH_LIST[0]}")"
+if [[ -d "$RESOURCE_BUNDLE" ]]; then
+    cp -R "$RESOURCE_BUNDLE" "$APP_BUNDLE/Contents/Resources/"
+fi
 echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
 
 chmod -R u+w "$APP_BUNDLE"

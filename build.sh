@@ -26,6 +26,12 @@ cp "MarkdownViewer/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
 # Copy icon
 cp "AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
 
+# Copy SwiftPM resources bundle if present
+RESOURCE_BUNDLE="$BUILD_DIR/MarkdownViewer_MarkdownViewer.bundle"
+if [[ -d "$RESOURCE_BUNDLE" ]]; then
+    cp -R "$RESOURCE_BUNDLE" "$APP_BUNDLE/Contents/Resources/"
+fi
+
 # Create PkgInfo
 echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
 
