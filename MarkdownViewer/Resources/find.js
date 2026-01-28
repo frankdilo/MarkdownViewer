@@ -38,7 +38,7 @@
                     if (!parent) {
                         return NodeFilter.FILTER_REJECT;
                     }
-                    if (parent.closest("script, style, mark")) {
+                    if (parent.closest("script, style, mark, .mermaid")) {
                         return NodeFilter.FILTER_REJECT;
                     }
                     return NodeFilter.FILTER_ACCEPT;
