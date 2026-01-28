@@ -171,6 +171,15 @@ em { font-style: italic; }
     color: var(--color-fg-default);
     font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
 }
+.mermaid {
+    margin-top: 0;
+    margin-bottom: 16px;
+    text-align: center;
+}
+.mermaid svg {
+    max-width: 100%;
+    height: auto;
+}
 mark.mv-find-match {
     background-color: #fff3b0;
     color: #111111;
