@@ -52,8 +52,9 @@ struct MarkdownHTMLTemplate {
     private static func buildScriptBlocks() -> String {
         let highlight = safeScript(resourceString(name: "highlight.min", extension: "js"))
         let find = safeScript(resourceString(name: "find", extension: "js"))
-        let mermaidLib = safeScript(resourceString(name: "mermaid.min", extension: "js"))
-        let mermaidInit = safeScript(resourceString(name: "mermaid-init", extension: "js"))
+        let dagre = safeScript(resourceString(name: "dagre.min", extension: "js"))
+        let beautifulMermaid = safeScript(resourceString(name: "beautiful-mermaid", extension: "js"))
+        let mermaidInit = safeScript(resourceString(name: "beautiful-mermaid-init", extension: "js"))
         let toc = safeScript(resourceString(name: "toc", extension: "js"))
         return """
         <script>
@@ -63,7 +64,10 @@ struct MarkdownHTMLTemplate {
         \(find)
         </script>
         <script>
-        \(mermaidLib)
+        \(dagre)
+        </script>
+        <script>
+        \(beautifulMermaid)
         </script>
         <script>
         \(mermaidInit)
