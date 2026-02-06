@@ -81,7 +81,7 @@ struct ContentView: View {
         }
         .onExitCommand {
             if documentState.fileChanged {
-                documentState.fileChanged = false
+                withAnimation(.easeInOut(duration: 0.2)) { documentState.fileChanged = false }
             } else if documentState.isShowingFindBar {
                 documentState.hideFindBar()
             }
@@ -127,7 +127,7 @@ struct ContentView: View {
                         .foregroundColor(.white)
                         .cornerRadius(6)
                         .onTapGesture {
-                            documentState.fileChanged = false
+                            withAnimation(.easeInOut(duration: 0.2)) { documentState.fileChanged = false }
                         }
                         .transition(.opacity.combined(with: .move(edge: .top)))
                     }
