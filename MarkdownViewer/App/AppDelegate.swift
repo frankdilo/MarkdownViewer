@@ -35,8 +35,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return event }
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
 
-            // External editor shortcut (configurable)
+            // External editor shortcut (configurable, only when a document window is active)
             if self.eventMatchesEditorShortcut(flags: flags, event: event) {
+                guard self.activeDocumentWindow() != nil else { return event }
                 self.openInExternalEditor()
                 return nil
             }

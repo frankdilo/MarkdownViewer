@@ -78,8 +78,15 @@ struct ShortcutRecorderView: View {
                     NSSound.beep()
                     return nil
                 }
+                // Reject reserved Cmd+Shift shortcuts used by the app
+                let cmdShiftReserved: Set<String> = ["[", "]", "g"]
+                if flags == [.command, .shift] && cmdShiftReserved.contains(chars.lowercased()) {
+                    NSSound.beep()
+                    return nil
+                }
                 settings.setShortcut(key: chars, modifiers: flags)
                 stopRecording()
+                return nil
             }
             return event
         }
