@@ -134,6 +134,8 @@ class DocumentState: ObservableObject {
             guard let self = self else { return }
             let newModDate = try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
             if newModDate != self.lastModificationDate {
+                self.lastModificationDate = newModDate
+                self.reload()
                 self.fileChanged = true
             }
         }

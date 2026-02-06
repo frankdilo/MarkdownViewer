@@ -80,7 +80,9 @@ struct ContentView: View {
             }
         }
         .onExitCommand {
-            if documentState.isShowingFindBar {
+            if documentState.fileChanged {
+                documentState.fileChanged = false
+            } else if documentState.isShowingFindBar {
                 documentState.hideFindBar()
             }
         }
@@ -110,22 +112,24 @@ struct ContentView: View {
             if documentState.fileChanged || documentState.isShowingFindBar {
                 VStack(alignment: .trailing, spacing: 8) {
                     if documentState.fileChanged {
-                        Button(action: {
-                            documentState.reload()
-                        }) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "arrow.clockwise")
-                                    .font(.system(size: 11, weight: .medium))
-                                Text("File changed")
-                                    .font(.system(size: 11, weight: .medium))
-                            }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(Color.orange.opacity(0.9))
-                            .foregroundColor(.white)
-                            .cornerRadius(6)
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(.system(size: 11, weight: .medium))
+                            Text("File updated")
+                                .font(.system(size: 11, weight: .medium))
+                            Text("esc to dismiss")
+                                .font(.system(size: 10))
+                                .opacity(0.7)
                         }
-                        .buttonStyle(.plain)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.accentColor.opacity(0.85))
+                        .foregroundColor(.white)
+                        .cornerRadius(6)
+                        .onTapGesture {
+                            documentState.fileChanged = false
+                        }
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                     }
 
                     if documentState.isShowingFindBar {
