@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import CoreGraphics
 import Foundation
@@ -138,6 +139,9 @@ class DocumentState: ObservableObject {
                 self.lastModificationDate = newModDate
                 self.reload()
                 withAnimation(.easeInOut(duration: 0.2)) { self.fileChanged = true }
+                if UserDefaults.standard.bool(forKey: "autoRaiseOnFileChange") {
+                    NSApplication.shared.activate(ignoringOtherApps: true)
+                }
             }
         }
 
