@@ -16,6 +16,7 @@ A native macOS Markdown viewer built with SwiftUI and WebKit.
 - Find-in-page with next/previous navigation.
 - Zoom controls (in/out/actual size).
 - Open Recent menu for quick access to files.
+- Configurable external editor with customizable keyboard shortcut (Cmd+E default).
 
 ## Build & Run
 

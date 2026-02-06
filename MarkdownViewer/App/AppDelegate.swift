@@ -137,9 +137,45 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NSSound.beep()
             return
         }
+        let settings = ExternalEditorSettings.shared
+        if let editorURL = settings.editorAppURL {
+            if FileManager.default.fileExists(atPath: editorURL.path) {
+                NSWorkspace.shared.open(
+                    [url],
+                    withApplicationAt: editorURL,
+                    configuration: NSWorkspace.OpenConfiguration()
+                )
+            } else {
+                let alert = NSAlert()
+                alert.messageText = "Editor Not Found"
+                alert.informativeText = "\(settings.editorDisplayName) could not be found at \(editorURL.path)."
+                alert.addButton(withTitle: "Choose Editor\u{2026}")
+                alert.addButton(withTitle: "Cancel")
+                alert.alertStyle = .warning
+                if alert.runModal() == .alertFirstButtonReturn {
+                    promptForEditor(thenOpen: url)
+                }
+            }
+        } else {
+            promptForEditor(thenOpen: url)
+        }
+    }
+
+    private func promptForEditor(thenOpen fileURL: URL) {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.applicationBundle]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.message = "Choose an editor application for Markdown files"
+        panel.prompt = "Choose"
+
+        guard panel.runModal() == .OK, let editorURL = panel.url else { return }
+        ExternalEditorSettings.shared.setEditor(url: editorURL)
         NSWorkspace.shared.open(
-            [url],
-            withApplicationAt: URL(fileURLWithPath: "/Applications/Sublime Text.app"),
+            [fileURL],
+            withApplicationAt: editorURL,
             configuration: NSWorkspace.OpenConfiguration()
         )
     }
