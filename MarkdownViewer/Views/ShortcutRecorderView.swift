@@ -12,6 +12,8 @@ struct ShortcutRecorderView: View {
         "1", "2", "3", "4", "5", "6", "7", "8", "9"
     ]
 
+    private static let reservedCmdShiftKeys: Set<String> = ["[", "]", "g"]
+
     var body: some View {
         HStack(spacing: 8) {
             ZStack {
@@ -73,14 +75,19 @@ struct ShortcutRecorderView: View {
                chars.count == 1,
                let char = chars.first,
                char.asciiValue.map({ $0 >= 32 && $0 < 127 }) == true {
+                // Require at least one modifier key (Cmd, Ctrl, or Option)
+                let requiredMods: NSEvent.ModifierFlags = [.command, .control, .option]
+                guard !flags.intersection(requiredMods).isEmpty else {
+                    NSSound.beep()
+                    return nil
+                }
                 // Reject reserved Cmd-only shortcuts
                 if flags == [.command] && Self.reservedKeys.contains(chars.lowercased()) {
                     NSSound.beep()
                     return nil
                 }
                 // Reject reserved Cmd+Shift shortcuts used by the app
-                let cmdShiftReserved: Set<String> = ["[", "]", "g"]
-                if flags == [.command, .shift] && cmdShiftReserved.contains(chars.lowercased()) {
+                if flags == [.command, .shift] && Self.reservedCmdShiftKeys.contains(chars.lowercased()) {
                     NSSound.beep()
                     return nil
                 }

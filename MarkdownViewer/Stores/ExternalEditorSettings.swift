@@ -5,16 +5,16 @@ final class ExternalEditorSettings: ObservableObject {
     static let shared = ExternalEditorSettings()
 
     @Published var editorAppURL: URL? {
-        didSet { if !isLoading && !isBatching { save() } }
+        didSet { saveIfNeeded() }
     }
     @Published var editorDisplayName: String = "External Editor" {
-        didSet { if !isLoading && !isBatching { save() } }
+        didSet { saveIfNeeded() }
     }
     @Published var shortcutKey: String = "e" {
-        didSet { if !isLoading && !isBatching { save() } }
+        didSet { saveIfNeeded() }
     }
     @Published var shortcutModifiers: UInt = NSEvent.ModifierFlags.command.rawValue {
-        didSet { if !isLoading && !isBatching { save() } }
+        didSet { saveIfNeeded() }
     }
 
     var menuItemTitle: String {
@@ -121,6 +121,10 @@ final class ExternalEditorSettings: ObservableObject {
         return name.isEmpty ? "External Editor" : name
     }
 
+    private func saveIfNeeded() {
+        if !isLoading && !isBatching { save() }
+    }
+
     private func save() {
         guard !isLoading else { return }
         if let url = editorAppURL {
@@ -142,7 +146,7 @@ final class ExternalEditorSettings: ObservableObject {
         if let name = defaults.string(forKey: editorDisplayNameKey) {
             editorDisplayName = name
         }
-        if let key = defaults.string(forKey: shortcutKeyKey), !key.isEmpty {
+        if let key = defaults.string(forKey: shortcutKeyKey) {
             shortcutKey = key
         }
         if defaults.object(forKey: shortcutModifiersKey) != nil {
