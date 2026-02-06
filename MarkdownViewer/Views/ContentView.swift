@@ -8,6 +8,7 @@ struct ContentView: View {
     @State private var isOutlinePinned = false
     @State private var scrollRequest: ScrollRequest?
     @State private var activeAnchorID: String?
+    @ObservedObject private var appearanceSettings = AppearanceSettings.shared
 
     init(documentState: DocumentState = DocumentState()) {
         _documentState = StateObject(wrappedValue: documentState)
@@ -146,6 +147,17 @@ struct ContentView: View {
             }
         }
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button(action: {
+                    appearanceSettings.cycle()
+                }) {
+                    Label(appearanceSettings.label, systemImage: appearanceSettings.iconName)
+                        .labelStyle(.iconOnly)
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .foregroundColor(.secondary)
+                .help(appearanceSettings.label)
+            }
             if canShowOutline {
                 ToolbarItem(placement: .primaryAction) {
                     Button(action: {
