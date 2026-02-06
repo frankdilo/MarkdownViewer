@@ -24,7 +24,10 @@ final class AppearanceSettings: ObservableObject {
         let raw = UserDefaults.standard.integer(forKey: "appearanceMode")
         mode = AppearanceMode(rawValue: raw) ?? .system
         isLoading = false
-        applyAppearance()
+        // NSApp may be nil during early init; defer until the app is ready
+        DispatchQueue.main.async { [self] in
+            applyAppearance()
+        }
     }
 
     func cycle() {
@@ -52,13 +55,14 @@ final class AppearanceSettings: ObservableObject {
     }
 
     private func applyAppearance() {
+        guard let app = NSApp else { return }
         switch mode {
         case .system:
-            NSApp.appearance = nil
+            app.appearance = nil
         case .light:
-            NSApp.appearance = NSAppearance(named: .aqua)
+            app.appearance = NSAppearance(named: .aqua)
         case .dark:
-            NSApp.appearance = NSAppearance(named: .darkAqua)
+            app.appearance = NSAppearance(named: .darkAqua)
         }
     }
 }
