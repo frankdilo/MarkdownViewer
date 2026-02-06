@@ -83,16 +83,8 @@ struct MarkdownViewerApp: App {
 
                 Divider()
 
-                if let shortcut = editorSettings.keyboardShortcut {
-                    Button(editorSettings.menuItemTitle) {
-                        appDelegate.openInExternalEditor()
-                    }
-                    .keyboardShortcut(shortcut)
-                    .id(editorSettings.shortcutIdentity)
-                } else {
-                    Button(editorSettings.menuItemTitle) {
-                        appDelegate.openInExternalEditor()
-                    }
+                Button(editorSettings.menuItemTitle) {
+                    appDelegate.openInExternalEditor()
                 }
             }
             CommandGroup(after: .toolbar) {

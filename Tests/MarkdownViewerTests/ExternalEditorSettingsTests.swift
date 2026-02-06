@@ -268,4 +268,94 @@ final class ExternalEditorSettingsTests: XCTestCase {
         XCTAssertNotEqual(identityBefore, identityAfter)
         XCTAssertEqual(identityAfter, "-0")
     }
+
+    // MARK: - Shortcut matching tests (exercises AppDelegate.eventMatchesEditorShortcut)
+
+    /// Creates a synthetic NSEvent for testing shortcut matching.
+    private func keyEvent(chars: String, modifiers: NSEvent.ModifierFlags) -> NSEvent? {
+        return NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: modifiers,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: chars,
+            charactersIgnoringModifiers: chars,
+            isARepeat: false,
+            keyCode: 0
+        )
+    }
+
+    func testDefaultShortcutMatchesCmdE() {
+        let delegate = AppDelegate()
+        let settings = ExternalEditorSettings.shared
+        settings.setShortcut(key: "e", modifiers: .command)
+
+        let event = keyEvent(chars: "e", modifiers: .command)!
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        XCTAssertTrue(delegate.eventMatchesEditorShortcut(flags: flags, event: event))
+    }
+
+    func testShortcutDoesNotMatchWrongKey() {
+        let delegate = AppDelegate()
+        let settings = ExternalEditorSettings.shared
+        settings.setShortcut(key: "e", modifiers: .command)
+
+        let event = keyEvent(chars: "r", modifiers: .command)!
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        XCTAssertFalse(delegate.eventMatchesEditorShortcut(flags: flags, event: event))
+    }
+
+    func testShortcutDoesNotMatchWrongModifiers() {
+        let delegate = AppDelegate()
+        let settings = ExternalEditorSettings.shared
+        settings.setShortcut(key: "e", modifiers: .command)
+
+        let event = keyEvent(chars: "e", modifiers: [.command, .shift])!
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        XCTAssertFalse(delegate.eventMatchesEditorShortcut(flags: flags, event: event))
+    }
+
+    func testCustomShortcutMatchesAfterChange() {
+        let delegate = AppDelegate()
+        let settings = ExternalEditorSettings.shared
+        settings.setShortcut(key: "b", modifiers: [.command, .shift])
+
+        let event = keyEvent(chars: "b", modifiers: [.command, .shift])!
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        XCTAssertTrue(delegate.eventMatchesEditorShortcut(flags: flags, event: event))
+    }
+
+    func testOldShortcutStopsMatchingAfterChange() {
+        let delegate = AppDelegate()
+        let settings = ExternalEditorSettings.shared
+        settings.setShortcut(key: "e", modifiers: .command)
+        settings.setShortcut(key: "b", modifiers: [.command, .shift])
+
+        // Old shortcut (Cmd+E) should no longer match
+        let event = keyEvent(chars: "e", modifiers: .command)!
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        XCTAssertFalse(delegate.eventMatchesEditorShortcut(flags: flags, event: event))
+    }
+
+    func testClearedShortcutMatchesNothing() {
+        let delegate = AppDelegate()
+        let settings = ExternalEditorSettings.shared
+        settings.clearShortcut()
+
+        let event = keyEvent(chars: "e", modifiers: .command)!
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        XCTAssertFalse(delegate.eventMatchesEditorShortcut(flags: flags, event: event))
+    }
+
+    func testShortcutMatchIsCaseInsensitive() {
+        let delegate = AppDelegate()
+        let settings = ExternalEditorSettings.shared
+        settings.setShortcut(key: "e", modifiers: .command)
+
+        let event = keyEvent(chars: "E", modifiers: .command)!
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        XCTAssertTrue(delegate.eventMatchesEditorShortcut(flags: flags, event: event))
+    }
 }

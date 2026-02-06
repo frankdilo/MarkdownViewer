@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -7,6 +8,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let openFilesStore = OpenFilesStore.shared
     private var windowCloseObserver: Any?
     private var keyDownMonitor: Any?
+    private var editorMenuItem: NSMenuItem?
+    private var settingsCancellable: AnyCancellable?
     private var didRestoreOpenFiles = false
     private var isTerminating = false
 
@@ -31,6 +34,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+
+            // External editor shortcut (configurable)
+            if self.eventMatchesEditorShortcut(flags: flags, event: event) {
+                self.openInExternalEditor()
+                return nil
+            }
+
+            // Ctrl+Tab / Ctrl+Shift+Tab for tab switching
             guard flags.contains(.control) else { return event }
             guard !flags.contains(.command), !flags.contains(.option) else { return event }
             guard event.keyCode == 48 else { return event }
@@ -44,6 +55,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         DispatchQueue.main.async { [weak self] in
             self?.restoreOpenFilesIfNeeded()
+        }
+        // After SwiftUI builds the menu, find the editor menu item and set its keyEquivalent for display
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.syncEditorMenuItemShortcut()
+        }
+        settingsCancellable = ExternalEditorSettings.shared.objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.syncEditorMenuItemShortcut()
+            }
         }
     }
 
@@ -74,6 +94,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let keyDownMonitor {
             NSEvent.removeMonitor(keyDownMonitor)
         }
+        settingsCancellable?.cancel()
     }
 
     func openFileFromPanel() {
@@ -159,6 +180,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             promptForEditor(thenOpen: url)
         }
+    }
+
+    func eventMatchesEditorShortcut(flags: NSEvent.ModifierFlags, event: NSEvent) -> Bool {
+        let settings = ExternalEditorSettings.shared
+        guard !settings.shortcutKey.isEmpty else { return false }
+        let editorMods = NSEvent.ModifierFlags(rawValue: settings.shortcutModifiers)
+            .intersection(.deviceIndependentFlagsMask)
+        guard flags == editorMods else { return false }
+        guard let chars = event.charactersIgnoringModifiers?.lowercased() else { return false }
+        return chars == settings.shortcutKey
+    }
+
+    private func syncEditorMenuItemShortcut() {
+        let settings = ExternalEditorSettings.shared
+        if editorMenuItem == nil || editorMenuItem?.menu == nil {
+            editorMenuItem = findMenuItem(withTitlePrefix: "Open in ")
+        }
+        guard let item = editorMenuItem else { return }
+        if settings.shortcutKey.isEmpty {
+            item.keyEquivalent = ""
+            item.keyEquivalentModifierMask = []
+        } else {
+            item.keyEquivalent = settings.shortcutKey
+            item.keyEquivalentModifierMask = NSEvent.ModifierFlags(rawValue: settings.shortcutModifiers)
+        }
+    }
+
+    private func findMenuItem(withTitlePrefix prefix: String) -> NSMenuItem? {
+        guard let mainMenu = NSApp.mainMenu else { return nil }
+        for menuBarItem in mainMenu.items {
+            guard let submenu = menuBarItem.submenu else { continue }
+            for item in submenu.items {
+                if item.title.hasPrefix(prefix) { return item }
+            }
+        }
+        return nil
     }
 
     private func promptForEditor(thenOpen fileURL: URL) {
