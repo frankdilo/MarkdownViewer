@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import CoreGraphics
 import Foundation
@@ -135,6 +136,9 @@ class DocumentState: ObservableObject {
             let newModDate = try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
             if newModDate != self.lastModificationDate {
                 self.fileChanged = true
+                if UserDefaults.standard.bool(forKey: "autoRaiseOnFileChange") {
+                    NSApplication.shared.activate(ignoringOtherApps: true)
+                }
             }
         }
 
