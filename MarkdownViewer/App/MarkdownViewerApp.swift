@@ -79,6 +79,13 @@ struct MarkdownViewerApp: App {
                     appDelegate.findPrevious()
                 }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button("Open in Sublime Text") {
+                    appDelegate.openInExternalEditor()
+                }
+                .keyboardShortcut("e", modifiers: .command)
             }
             CommandGroup(after: .toolbar) {
                 Button("Zoom In") {

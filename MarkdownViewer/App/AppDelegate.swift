@@ -132,6 +132,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         activeDocumentState()?.findPrevious()
     }
 
+    func openInExternalEditor() {
+        guard let url = activeDocumentState()?.currentURL else {
+            NSSound.beep()
+            return
+        }
+        NSWorkspace.shared.open(
+            [url],
+            withApplicationAt: URL(fileURLWithPath: "/Applications/Sublime Text.app"),
+            configuration: NSWorkspace.OpenConfiguration()
+        )
+    }
+
     func selectNextTab() {
         activeDocumentWindow()?.selectNextTab(nil)
     }
