@@ -78,16 +78,7 @@ struct SettingsView: View {
     }
 
     private func chooseEditor() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.applicationBundle]
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.canChooseFiles = true
-        panel.directoryURL = URL(fileURLWithPath: "/Applications")
-        panel.message = "Select an editor application"
-        panel.prompt = "Choose"
-
-        if panel.runModal() == .OK, let url = panel.url {
+        if let url = ExternalEditorSettings.presentEditorChooserPanel(message: "Select an editor application") {
             settings.setEditor(url: url)
         }
     }
@@ -97,6 +88,10 @@ struct ShortcutRecorderView: View {
     @ObservedObject var settings: ExternalEditorSettings
     @State private var isRecording = false
     @State private var eventMonitor: Any?
+
+    private static let reservedKeys: Set<String> = [
+        "q", "w", "c", "v", "x", "z", "a", "o", "t", "n", "f", "s", "p", "h", "m", ","
+    ]
 
     var body: some View {
         HStack(spacing: 8) {
@@ -142,6 +137,9 @@ struct ShortcutRecorderView: View {
                 .help("Remove keyboard shortcut")
             }
         }
+        .onDisappear {
+            stopRecording()
+        }
     }
 
     private func startRecording() {
@@ -156,10 +154,15 @@ struct ShortcutRecorderView: View {
                chars.count == 1,
                let char = chars.first,
                char.asciiValue.map({ $0 >= 32 && $0 < 127 }) == true {
+                // Reject reserved Cmd-only shortcuts
+                if flags == [.command] && Self.reservedKeys.contains(chars.lowercased()) {
+                    NSSound.beep()
+                    return nil
+                }
                 settings.setShortcut(key: chars, modifiers: flags)
                 stopRecording()
             }
-            return nil
+            return event
         }
     }
 

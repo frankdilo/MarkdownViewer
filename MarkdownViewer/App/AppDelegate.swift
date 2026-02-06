@@ -162,16 +162,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func promptForEditor(thenOpen fileURL: URL) {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.applicationBundle]
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.canChooseFiles = true
-        panel.directoryURL = URL(fileURLWithPath: "/Applications")
-        panel.message = "Choose an editor application for Markdown files"
-        panel.prompt = "Choose"
-
-        guard panel.runModal() == .OK, let editorURL = panel.url else { return }
+        guard let editorURL = ExternalEditorSettings.presentEditorChooserPanel(
+            message: "Choose an editor application for Markdown files"
+        ) else { return }
         ExternalEditorSettings.shared.setEditor(url: editorURL)
         NSWorkspace.shared.open(
             [fileURL],

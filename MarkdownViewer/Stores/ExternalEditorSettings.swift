@@ -1,4 +1,3 @@
-import Combine
 import Foundation
 import SwiftUI
 
@@ -56,6 +55,7 @@ final class ExternalEditorSettings: ObservableObject {
         return NSWorkspace.shared.icon(forFile: url.path)
     }
 
+    private var isLoading = false
     private let defaults = UserDefaults.standard
     private let editorAppURLKey = "externalEditorAppURL"
     private let editorDisplayNameKey = "externalEditorDisplayName"
@@ -86,12 +86,25 @@ final class ExternalEditorSettings: ObservableObject {
         shortcutModifiers = 0
     }
 
+    static func presentEditorChooserPanel(message: String = "Choose an editor application") -> URL? {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.applicationBundle]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.message = message
+        panel.prompt = "Choose"
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
     static func displayName(for appURL: URL) -> String {
         let name = appURL.deletingPathExtension().lastPathComponent
         return name.isEmpty ? "External Editor" : name
     }
 
     private func save() {
+        guard !isLoading else { return }
         if let url = editorAppURL {
             defaults.set(url.path, forKey: editorAppURLKey)
         } else {
@@ -103,6 +116,8 @@ final class ExternalEditorSettings: ObservableObject {
     }
 
     private func load() {
+        isLoading = true
+        defer { isLoading = false }
         if let path = defaults.string(forKey: editorAppURLKey) {
             editorAppURL = URL(fileURLWithPath: path)
         }
