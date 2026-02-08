@@ -108,7 +108,8 @@ struct MarkdownRenderer: MarkupWalker {
             let alt = image.plainText
             result += "<img src=\"\(image.source ?? "")\" alt=\"\(escapeHTML(alt))\">"
         case let list as UnorderedList:
-            result += "<ul>\n"
+            let hasCheckboxes = list.children.contains { ($0 as? ListItem)?.checkbox != nil }
+            result += hasCheckboxes ? "<ul class=\"task-list\">\n" : "<ul>\n"
             for child in list.children { visit(child) }
             result += "</ul>\n"
         case let list as OrderedList:
@@ -116,7 +117,12 @@ struct MarkdownRenderer: MarkupWalker {
             for child in list.children { visit(child) }
             result += "</ol>\n"
         case let item as ListItem:
-            result += "<li>"
+            if let checkbox = item.checkbox {
+                let checked = checkbox == .checked ? " checked" : ""
+                result += "<li class=\"task-list-item\"><input type=\"checkbox\" disabled\(checked)> "
+            } else {
+                result += "<li>"
+            }
             for child in item.children { visit(child) }
             result += "</li>\n"
         case let quote as BlockQuote:
