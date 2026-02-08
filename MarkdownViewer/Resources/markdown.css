@@ -171,6 +171,17 @@ em { font-style: italic; }
     color: var(--color-fg-default);
     font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
 }
+ul.task-list {
+    list-style: none;
+    padding-left: 1.5em;
+}
+.task-list-item input[type="checkbox"] {
+    margin: 0 0.35em 0 -1.3em;
+    vertical-align: middle;
+}
+.task-list-item p {
+    display: inline;
+}
 .mermaid {
     margin-top: 0;
     margin-bottom: 16px;
