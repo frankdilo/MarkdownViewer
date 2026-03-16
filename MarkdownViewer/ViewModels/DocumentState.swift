@@ -2,6 +2,7 @@ import Combine
 import CoreGraphics
 import Foundation
 import Markdown
+import SwiftUI
 
 class DocumentState: ObservableObject {
     @Published var htmlContent: String = ""
@@ -134,7 +135,9 @@ class DocumentState: ObservableObject {
             guard let self = self else { return }
             let newModDate = try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
             if newModDate != self.lastModificationDate {
-                self.fileChanged = true
+                self.lastModificationDate = newModDate
+                self.reload()
+                withAnimation(.easeInOut(duration: 0.2)) { self.fileChanged = true }
             }
         }
 
