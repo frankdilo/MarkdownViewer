@@ -59,6 +59,7 @@ struct MarkdownRenderer: MarkupWalker {
     var result = ""
     var outline: [OutlineItem] = []
     var slugger = HeadingSlugger()
+    private var stripCancelledPrefix = false
 
     mutating func render(_ document: Document) -> RenderedMarkdown {
         result = ""
@@ -86,7 +87,19 @@ struct MarkdownRenderer: MarkupWalker {
             for child in paragraph.children { visit(child) }
             result += "</p>\n"
         case let text as Markdown.Text:
-            result += escapeHTML(text.string)
+            if stripCancelledPrefix {
+                stripCancelledPrefix = false
+                var str = text.string
+                for prefix in ["[-] ", "[~] "] {
+                    if str.hasPrefix(prefix) {
+                        str = String(str.dropFirst(prefix.count))
+                        break
+                    }
+                }
+                result += escapeHTML(str)
+            } else {
+                result += escapeHTML(text.string)
+            }
         case let emphasis as Emphasis:
             result += "<em>"
             for child in emphasis.children { visit(child) }
@@ -108,7 +121,10 @@ struct MarkdownRenderer: MarkupWalker {
             let alt = image.plainText
             result += "<img src=\"\(image.source ?? "")\" alt=\"\(escapeHTML(alt))\">"
         case let list as UnorderedList:
-            result += "<ul>\n"
+            let hasCheckboxes = list.children.contains {
+                ($0 as? ListItem)?.checkbox != nil || isCancelledCheckbox($0 as? ListItem)
+            }
+            result += hasCheckboxes ? "<ul class=\"task-list\">\n" : "<ul>\n"
             for child in list.children { visit(child) }
             result += "</ul>\n"
         case let list as OrderedList:
@@ -116,7 +132,15 @@ struct MarkdownRenderer: MarkupWalker {
             for child in list.children { visit(child) }
             result += "</ol>\n"
         case let item as ListItem:
-            result += "<li>"
+            if let checkbox = item.checkbox {
+                let checked = checkbox == .checked ? " checked" : ""
+                result += "<li class=\"task-list-item\"><input type=\"checkbox\" disabled\(checked)> "
+            } else if isCancelledCheckbox(item) {
+                result += "<li class=\"task-list-item cancelled\"><input type=\"checkbox\" disabled checked> "
+                stripCancelledPrefix = true
+            } else {
+                result += "<li>"
+            }
             for child in item.children { visit(child) }
             result += "</li>\n"
         case let quote as BlockQuote:
@@ -164,6 +188,19 @@ struct MarkdownRenderer: MarkupWalker {
                 visit(child)
             }
         }
+    }
+
+    private func isCancelledCheckbox(_ item: ListItem?) -> Bool {
+        guard let item = item, item.checkbox == nil else { return false }
+        for child in item.children {
+            guard let paragraph = child as? Paragraph else { continue }
+            for inline in paragraph.children {
+                guard let text = inline as? Markdown.Text else { continue }
+                return text.string.hasPrefix("[-] ") || text.string.hasPrefix("[~] ")
+            }
+            break
+        }
+        return false
     }
 
     private func escapeHTML(_ string: String) -> String {
