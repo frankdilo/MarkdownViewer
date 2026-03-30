@@ -4,6 +4,7 @@ import SwiftUI
 struct MarkdownViewerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var recentFilesStore = RecentFilesStore.shared
+    @AppStorage("autoRaiseOnFileChange") private var autoRaiseOnFileChange = false
 
     var body: some Scene {
         WindowGroup {
@@ -95,6 +96,10 @@ struct MarkdownViewerApp: App {
                     appDelegate.resetZoom()
                 }
                 .keyboardShortcut("0", modifiers: .command)
+
+                Divider()
+
+                Toggle("Bring to Front on File Change", isOn: $autoRaiseOnFileChange)
             }
         }
     }
