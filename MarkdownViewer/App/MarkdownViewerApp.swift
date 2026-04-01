@@ -4,6 +4,7 @@ import SwiftUI
 struct MarkdownViewerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var recentFilesStore = RecentFilesStore.shared
+    @ObservedObject private var editorSettings = ExternalEditorSettings.shared
 
     var body: some Scene {
         WindowGroup {
@@ -79,6 +80,12 @@ struct MarkdownViewerApp: App {
                     appDelegate.findPrevious()
                 }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button(editorSettings.menuItemTitle) {
+                    appDelegate.openInExternalEditor()
+                }
             }
             CommandGroup(after: .toolbar) {
                 Button("Zoom In") {
@@ -96,6 +103,9 @@ struct MarkdownViewerApp: App {
                 }
                 .keyboardShortcut("0", modifiers: .command)
             }
+        }
+        Settings {
+            SettingsView()
         }
     }
 }
